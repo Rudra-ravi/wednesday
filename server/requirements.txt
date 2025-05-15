@@ -1,0 +1,8 @@
+google-generativeai
+python-dotenv
+requests
+gpiozero
+RPi.GPIO
+adafruit-circuitpython-servokit
+langchain
+langchain-core 

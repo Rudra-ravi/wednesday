@@ -1,0 +1,12 @@
+tkinter
+customtkinter
+pillow
+google-generativeai
+python-dotenv
+requests
+sounddevice
+scipy
+pyttsx3
+langchain
+langchain-core
+pyinstaller 
