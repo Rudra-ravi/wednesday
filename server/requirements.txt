@@ -1,8 +1,2 @@
-google-generativeai
-python-dotenv
-requests
-gpiozero
+mcp[cli]
 RPi.GPIO
-adafruit-circuitpython-servokit
-langchain
-langchain-core 

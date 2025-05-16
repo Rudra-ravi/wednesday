@@ -1,238 +1,89 @@
-#!/usr/bin/env python3
-import os
-import sys
-import json
-import time
-from flask import Flask, request, jsonify
-from adafruit_servokit import ServoKit
-import google.generativeai as genai
-from dotenv import load_dotenv
-import threading
-import logging
-from langchain.schema import SystemMessage, HumanMessage, AIMessage
+from mcp.server.fastmcp import FastMCP
+from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-logger = logging.getLogger("Wednesday-Server")
+# Assuming servo_handler.py is in the same directory or PYTHONPATH
+from servo_handler import ServoController 
 
-# Load environment variables
-load_dotenv()
+# Configuration for servo pins
+# User specified: 17, 27, 22, 23, 24, 25
+SERVO_PINS_CONFIG = {
+    17: "servo_1_base", 
+    27: "servo_2_shoulder", 
+    22: "servo_3_elbow",
+    23: "servo_4_wrist_rotate", 
+    24: "servo_5_wrist_pitch", 
+    25: "servo_6_gripper"
+}
 
-# Configure Gemini API
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-if not GOOGLE_API_KEY:
-    raise ValueError("GOOGLE_API_KEY not found in environment variables")
+# Instantiate the MCP application
+# Using stateless_http=True can simplify things if session state across calls isn't strictly needed by MCP itself
+# For just calling a tool, stateless is often fine.
+mcp_app = FastMCP(name="RaspberryPiServoControlServer", stateless_http=True)
 
-genai.configure(api_key=GOOGLE_API_KEY)
-model = genai.GenerativeModel('gemini-2.5-flash')
+# Instantiate the servo controller globally within the server module
+# Its lifecycle (init/cleanup) will be managed by the MCP app's lifespan
+servo_controller_instance = ServoController(servo_pins_map=SERVO_PINS_CONFIG)
 
-# Initialize the Flask app
-app = Flask(__name__)
-
-# Initialize the servo controller
-try:
-    # Initialize ServoKit for PCA9685 controller with 16 channels
-    logger.info("Initializing servo controller...")
-    kit = ServoKit(channels=16)
-    
-    # Configure the 6 servos we'll be using (adjust as needed)
-    for i in range(6):
-        # Set initial angle to 90 degrees (center position)
-        kit.servo[i].angle = 90
-        logger.info(f"Initialized servo {i} to center position (90°)")
-    
-    servo_initialized = True
-except Exception as e:
-    logger.error(f"Failed to initialize servo controller: {e}")
-    logger.warning("Running in simulation mode - no actual servos will be controlled")
-    servo_initialized = False
-
-class MCPServer:
-    def __init__(self):
-        """Initialize the Model Context Protocol server"""
-        self.conversation_history = []
-        
-        # Add a system prompt to guide the model
-        system_message = """
-        You are Wednesday, an AI assistant capable of controlling 6 servo motors on a robotic arm.
-        The servo IDs range from 0 to 5, where:
-        - Servo 0: Base rotation (0° to 180°)
-        - Servo 1: Shoulder joint (0° to 180°)
-        - Servo 2: Elbow joint (0° to 180°)
-        - Servo 3: Wrist pitch (0° to 180°)
-        - Servo 4: Wrist roll (0° to 180°)
-        - Servo 5: Gripper (0° = open, 180° = closed)
-        
-        Convert natural language commands into specific servo movements.
-        """
-        self.conversation_history.append(SystemMessage(content=system_message))
-    
-    def process_command(self, command_data):
-        """Process a command received from the client"""
-        if not command_data.get("is_command", False):
-            return {"status": "error", "message": "Not a valid command"}
-        
-        if command_data.get("command_type") == "servo_control":
-            return self.handle_servo_command(command_data)
-        
-        return {"status": "error", "message": "Unknown command type"}
-    
-    def handle_servo_command(self, command_data):
-        """Handle a servo control command"""
-        try:
-            servo_commands = command_data.get("servo_commands", [])
-            results = []
-            
-            for cmd in servo_commands:
-                servo_id = cmd.get("servo_id")
-                position = cmd.get("position")
-                speed = cmd.get("speed", 50)
-                
-                # Validate parameters
-                if not (0 <= servo_id <= 5):
-                    results.append({
-                        "servo_id": servo_id,
-                        "status": "error",
-                        "message": "Invalid servo ID (must be 0-5)"
-                    })
-                    continue
-                
-                if not (0 <= position <= 180):
-                    results.append({
-                        "servo_id": servo_id,
-                        "status": "error",
-                        "message": "Invalid position (must be 0-180)"
-                    })
-                    continue
-                
-                # Move servo
-                if servo_initialized:
-                    # Get current position
-                    current_position = kit.servo[servo_id].angle
-                    
-                    # Calculate step size based on speed (1-100)
-                    step_size = max(1, min(10, speed / 10))
-                    
-                    # Move servo gradually in a separate thread
-                    threading.Thread(
-                        target=self._move_servo_gradually,
-                        args=(servo_id, current_position, position, step_size)
-                    ).start()
-                    
-                    results.append({
-                        "servo_id": servo_id,
-                        "status": "success",
-                        "message": f"Moving servo {servo_id} to position {position}"
-                    })
-                else:
-                    # Simulation mode
-                    results.append({
-                        "servo_id": servo_id,
-                        "status": "simulated",
-                        "message": f"Simulated: Moving servo {servo_id} to position {position}"
-                    })
-            
-            return {
-                "status": "success",
-                "results": results,
-                "description": command_data.get("description", "Command executed")
-            }
-        
-        except Exception as e:
-            logger.error(f"Error handling servo command: {e}")
-            return {"status": "error", "message": str(e)}
-    
-    def _move_servo_gradually(self, servo_id, start_pos, end_pos, step_size):
-        """Move a servo gradually from start to end position"""
-        try:
-            # Determine direction
-            step = step_size if start_pos < end_pos else -step_size
-            
-            # Move in steps
-            current_pos = start_pos
-            while (step > 0 and current_pos < end_pos) or (step < 0 and current_pos > end_pos):
-                current_pos += step
-                # Ensure we don't overshoot
-                if (step > 0 and current_pos > end_pos) or (step < 0 and current_pos < end_pos):
-                    current_pos = end_pos
-                
-                # Move servo
-                kit.servo[servo_id].angle = current_pos
-                logger.debug(f"Servo {servo_id} moved to {current_pos}°")
-                
-                # Small delay for smooth movement
-                time.sleep(0.015)
-            
-            # Ensure final position is set
-            kit.servo[servo_id].angle = end_pos
-            logger.info(f"Servo {servo_id} reached target position: {end_pos}°")
-        
-        except Exception as e:
-            logger.error(f"Error moving servo {servo_id} gradually: {e}")
-
-# Create MCP server instance
-mcp_server = MCPServer()
-
-@app.route('/health', methods=['GET'])
-def health_check():
-    """Health check endpoint"""
-    return jsonify({
-        "status": "ok",
-        "servo_controller": "active" if servo_initialized else "simulated"
-    })
-
-@app.route('/command', methods=['POST'])
-def receive_command():
-    """Endpoint to receive commands from the client"""
+@asynccontextmanager
+async def app_lifespan(server: FastMCP) -> AsyncIterator[dict]:
+    """Manage application lifecycle: initialize and cleanup servo controller."""
+    print("MCP Server Lifespan: Initializing Servo Controller...")
+    await servo_controller_instance.initialize_gpio()
+    if not servo_controller_instance.is_initialized:
+        print("Error: Servo controller failed to initialize. Server may not function correctly.")
+        # You might want to raise an error here to prevent the server from starting
+        # or handle this state in the tool itself.
     try:
-        command_data = request.json
-        logger.info(f"Received command: {json.dumps(command_data)}")
-        
-        result = mcp_server.process_command(command_data)
-        return jsonify(result)
-    
-    except Exception as e:
-        logger.error(f"Error processing command: {e}")
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 500
+        yield {"servo_controller": servo_controller_instance} # Pass controller if needed in context (not typical for FastMCP tools)
+    finally:
+        print("MCP Server Lifespan: Cleaning up Servo Controller...")
+        await servo_controller_instance.cleanup_gpio()
 
-@app.route('/generate', methods=['POST'])
-def generate_content():
-    """Generate content using the Gemini model"""
+# Assign the lifespan manager to the MCP application
+mcp_app.lifespan = app_lifespan
+
+@mcp_app.tool(description="Executes a list of servo movement commands on the Raspberry Pi.")
+async def execute_servo_commands(commands: list[dict]) -> str:
+    """
+    Receives a list of command objects, where each object should have:
+    - "pin": integer (BCM GPIO pin number)
+    - "angle": integer (0-180 degrees)
+    - "duration_ms": optional integer (time for movement/hold in milliseconds, defaults to 500)
+    Returns a string indicating the status of command processing.
+    """
+    print(f"MCP Tool 'execute_servo_commands' called with: {commands}")
+    if not servo_controller_instance.is_initialized:
+        error_msg = "Error: Servo controller is not initialized. Cannot execute commands."
+        print(error_msg)
+        # The MCP SDK handles returning errors from tools. 
+        # Raising an exception here would also work and be potentially clearer for the client.
+        # For now, returning an error string.
+        return error_msg 
+
     try:
-        data = request.json
-        prompt = data.get('prompt', '')
-        
-        if not prompt:
-            return jsonify({"error": "No prompt provided"}), 400
-        
-        # Generate content
-        response = model.generate_content(prompt)
-        
-        return jsonify({
-            "response": response.text
-        })
-    
+        # The process_commands method in ServoController is already async
+        result_message = await servo_controller_instance.process_commands(commands)
+        print(f"Servo command processing result: {result_message}")
+        return result_message
     except Exception as e:
-        logger.error(f"Error generating content: {e}")
-        return jsonify({
-            "error": str(e)
-        }), 500
+        # Catch-all for unexpected errors during command processing
+        error_msg = f"An unexpected error occurred in execute_servo_commands: {str(e)}"
+        print(error_msg)
+        # Again, consider raising an exception that MCP can serialize, 
+        # or ensure your string clearly indicates an error.
+        return error_msg
 
-if __name__ == '__main__':
-    # Default port is 8011
-    port = int(os.getenv("SERVER_PORT", 8011))
+if __name__ == "__main__":
+    server_host = "0.0.0.0" # Listen on all available network interfaces
+    server_port = 8011
+    print(f"Starting Raspberry Pi Servo Control MCP Server on {server_host}:{server_port}...")
     
-    # Run the app
-    logger.info(f"Starting Wednesday MCP Server on port {port}")
-    logger.info(f"Servo controller status: {'Active' if servo_initialized else 'Simulated'}")
-    
-    app.run(host='0.0.0.0', port=port, debug=False) 
+    # The mcp.run() command handles the ASGI server (e.g., Uvicorn) internally.
+    # It uses sensible defaults but can be configured further if needed.
+    mcp_app.run(
+        transport="streamable-http", 
+        host=server_host, 
+        port=server_port, 
+        log_level="info" # Or "debug" for more verbose MCP logs
+    )

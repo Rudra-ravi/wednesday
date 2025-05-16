@@ -1,3 +1,0 @@
-"""
-Wednesday server package
-""" 

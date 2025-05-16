@@ -1,3 +1,0 @@
-"""
-Wednesday client package
-""" 

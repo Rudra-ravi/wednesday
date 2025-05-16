@@ -1,36 +1,37 @@
-# Wednesday - AI Servo Control System
+# Raspberry Pi Servo Control with MCP
 
-A Python-based project that utilizes the Gemini 2.5 Flash AI model to control servo motors through natural language processing. The system consists of a GUI client and a Raspberry Pi server that communicate through a Model Context Protocol (MCP) compatible interface.
-
-## Overview
-
-Wednesday is a voice-enabled AI assistant that can interpret natural language commands and control a robotic arm with 6 servo motors. The project features:
-
-- 🧠 **Gemini 2.5 Flash** AI model for natural language understanding and response generation
-- 💬 **Voice input and output** capabilities for hands-free operation
-- 🔧 **Servo motor control** via a Raspberry Pi server
-- 🖥️ **Modern GUI** with a JARVIS-inspired interface
-- 🔄 **MCP-compatible** API for standardized communication between client and server
+This project demonstrates controlling servo motors on a Raspberry Pi using the Model Context Protocol (MCP). It consists of a server component that runs on the Raspberry Pi and controls the servos, and a client component that sends commands to the server.
 
 ## Project Structure
 
-```
-wednesday/
-├── client/                  # GUI client application
-│   ├── wednesday_client.py  # Main client application
-│   ├── themes.py            # UI theme configuration
-│   ├── requirements.txt     # Python dependencies for client
-│   └── dot_env_example      # Example environment variables
-├── server/                  # Raspberry Pi server
-│   ├── mcp_server.py        # MCP-compatible server
-│   ├── requirements.txt     # Python dependencies for server
-│   └── dot_env_example      # Example environment variables
-└── README.md                # This file
-```
+- **server/**: Contains the MCP server that runs on the Raspberry Pi
+  - `mcp_server.py`: The main server for actual Raspberry Pi hardware
+  - `mcp_server_sim.py`: A simulated version for testing without hardware
+  - `servo_handler.py`: Controls the servo motors using RPi.GPIO
+  - `servo_handler_sim.py`: A simulated version for testing without hardware
+  - `requirements.txt`: Python dependencies for the server
 
-## Setup Instructions
+- **client/**: Contains the client application
+  - `wednesday_app.py`: A Tkinter GUI application that uses Gemini to interpret commands
+  - `test_client.py`: A simple test client for the server
+  - `requirements.txt`: Python dependencies for the client
 
-### Client Setup (Computer)
+## Setup
+
+### Server Setup (Raspberry Pi)
+
+1. Install the required dependencies:
+   ```bash
+   cd server
+   pip install -r requirements.txt
+   ```
+
+2. Run the server:
+   ```bash
+   python mcp_server.py
+   ```
+
+### Client Setup
 
 1. Install the required dependencies:
    ```bash
@@ -38,105 +39,61 @@ wednesday/
    pip install -r requirements.txt
    ```
 
-2. Create a `.env` file in the client directory with your API keys:
+2. Create a `.env` file in the client directory with your Gemini API key:
    ```
-   GOOGLE_API_KEY=your_gemini_api_key_here
-   SERVER_IP=192.168.1.100  # Replace with your Raspberry Pi's IP
-   SERVER_PORT=8011
+   GEMINI_API_KEY=your_api_key_here
    ```
 
-3. Run the client application:
+3. Run the client:
    ```bash
-   python wednesday_client.py
+   python wednesday_app.py
    ```
 
-### Server Setup (Raspberry Pi)
+## Testing Without Hardware
 
-1. Install the required dependencies on your Raspberry Pi:
+For testing without a Raspberry Pi, you can use the simulated versions:
+
+1. Run the simulated server:
    ```bash
    cd server
-   pip install -r requirements.txt
+   python mcp_server_sim.py
    ```
 
-2. Connect the 6 servo motors to your Raspberry Pi using the PCA9685 controller.
-
-3. Create a `.env` file in the server directory:
-   ```
-   GOOGLE_API_KEY=your_gemini_api_key_here
-   SERVER_PORT=8011
-   DEBUG=False
-   ```
-
-4. Run the server application:
+2. Run the test client:
    ```bash
-   python mcp_server.py
+   cd client
+   python test_client.py
    ```
 
-## Hardware Configuration
+## Servo Configuration
 
-### Servo Motors
+The server is configured to control 6 servo motors connected to the following GPIO pins:
 
-The system is configured to control 6 servo motors with the following functions:
+- Pin 17: Base servo
+- Pin 27: Shoulder servo
+- Pin 22: Elbow servo
+- Pin 23: Wrist rotation servo
+- Pin 24: Wrist pitch servo
+- Pin 25: Gripper servo
 
-- **Servo 0**: Base rotation (0° to 180°)
-- **Servo 1**: Shoulder joint (0° to 180°)
-- **Servo 2**: Elbow joint (0° to 180°)
-- **Servo 3**: Wrist pitch (0° to 180°)
-- **Servo 4**: Wrist roll (0° to 180°)
-- **Servo 5**: Gripper (0° = open, 180° = closed)
+## Protocol
 
-### Wiring Diagram
+The server exposes a tool called `execute_servo_commands` that accepts a list of commands. Each command is a dictionary with the following fields:
 
-Connect your PCA9685 servo controller to the Raspberry Pi:
+- `pin`: The GPIO pin number the servo is connected to
+- `angle`: The target angle in degrees (0-180)
+- `duration_ms`: (Optional) Time to take for the movement in milliseconds (defaults to 500ms)
 
-- VCC: 5V power supply
-- GND: Ground
-- SDA: GPIO 2 (I2C Data)
-- SCL: GPIO 3 (I2C Clock)
-
-Then connect each servo motor to channels 0-5 on the PCA9685 controller.
-
-## Usage
-
-1. Launch the client application on your computer.
-2. Ensure the server is running on your Raspberry Pi.
-3. The client will attempt to connect to the server automatically.
-4. You can use either text or voice commands to control the robot.
-
-### Example Commands
-
-- "Move the base servo to 45 degrees"
-- "Turn the wrist 90 degrees"
-- "Open the gripper"
-- "Move the robotic arm to a resting position"
-- "Wave hello with the arm"
-
-## Model Context Protocol (MCP)
-
-Wednesday implements a simplified version of the Model Context Protocol (MCP) for client-server communication. The MCP allows the AI model to convert natural language into structured commands that can be executed by the server.
-
-Commands sent to the server follow this format:
+Example command:
 ```json
 {
-    "is_command": true,
-    "command_type": "servo_control",
-    "servo_commands": [
-        {
-            "servo_id": 0,
-            "position": 90,
-            "speed": 50
-        }
-    ],
-    "description": "Rotating the base to the center position"
+  "commands": [
+    {"pin": 17, "angle": 45, "duration_ms": 1000},
+    {"pin": 22, "angle": 30, "duration_ms": 800}
+  ]
 }
 ```
 
 ## License
 
-This project is open source and available under the MIT License.
-
-## Acknowledgments
-
-- Google Gemini for the AI language model
-- The Model Context Protocol (MCP) community for inspiration
-- Iron Man's JARVIS for the UI design inspiration 
+This project is open source and available under the MIT License. 

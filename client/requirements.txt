@@ -1,12 +1,5 @@
-tkinter
-customtkinter
-pillow
+SpeechRecognition>=3.8.1
+Pyaudio>=0.2.11
 google-generativeai
+mcp[cli]
 python-dotenv
-requests
-sounddevice
-scipy
-pyttsx3
-langchain
-langchain-core
-pyinstaller 
