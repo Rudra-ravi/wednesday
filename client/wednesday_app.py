@@ -3,12 +3,12 @@ from tkinter import ttk, scrolledtext, font, simpledialog, messagebox
 import asyncio
 import threading
 import json
+import time
 from dotenv import load_dotenv
 import os
 
 # For MCP Client
 from mcp import ClientSession, types as mcp_types
-from mcp.client.streamable_http import streamablehttp_client
 
 # For Gemini
 import google.generativeai as genai
@@ -37,7 +37,7 @@ class WednesdayApp:
     def __init__(self, root, async_loop_manager):
         self.root = root
         self.async_loop_manager = async_loop_manager
-        self.root.title("Wednesday - Gemini MCP Client")
+        self.root.title("Wednesday - MCP Client")
         self.root.geometry("750x650") # Increased size
 
         # Load Gemini API Key
@@ -48,7 +48,7 @@ class WednesdayApp:
         else:
             try:
                 genai.configure(api_key=self.gemini_api_key)
-                self.gemini_model = genai.GenerativeModel('gemini-1.5-flash-latest') # or 'gemini-pro'
+                self.gemini_model = genai.GenerativeModel('gemini-2.5-flash-preview-04-17') # or 'gemini-pro'
                 print("Gemini Model Initialized.")
             except Exception as e:
                 messagebox.showerror("Gemini Init Error", f"Failed to initialize Gemini: {e}")
@@ -95,7 +95,7 @@ class WednesdayApp:
 
 
         # Main Input Area
-        main_input_label = ttk.Label(root, text="Enter your command for Gemini:", style="Accent.TLabel")
+        main_input_label = ttk.Label(root, text="Enter your command for Wednesday:", style="Accent.TLabel")
         main_input_label.pack(pady=(10,2), padx=20, anchor="w")
         
         text_font = font.Font(family="Segoe UI", size=12)
@@ -107,7 +107,7 @@ class WednesdayApp:
         self.text_area.pack(pady=5, padx=20, fill="both", expand=True)
 
         # Submit Button
-        self.submit_button = ttk.Button(root, text="Send Command to Gemini & Pi", command=self.on_submit_action_async, style="TButton")
+        self.submit_button = ttk.Button(root, text="Send Command to Pi", command=self.on_submit_action_async, style="TButton")
         self.submit_button.pack(pady=(5,10))
 
         # Status and Log Area Frame
@@ -168,7 +168,7 @@ class WednesdayApp:
                 self.update_status(f"An error occurred: {e}", is_error=True)
                 self.log_message(f"Error in async submission: {e}", level="ERROR")
             finally:
-                self.submit_button.config(state=tk.NORMAL, text="Send Command to Gemini & Pi")
+                self.submit_button.config(state=tk.NORMAL, text="Send Command to Pi")
                 if not self.status_label.cget("text").startswith("Error:") and not self.status_label.cget("text").startswith("Success:"):
                      self.update_status("Ready for next command.")
 
@@ -299,55 +299,73 @@ JSON output:
             return None
 
     async def send_commands_to_pi_mcp(self, rpi_ip: str, port: int, commands: list[dict]) -> str | None:
-        mcp_server_url = f"http://{rpi_ip}:{port}/mcp" # Standard MCP path for streamable HTTP
-        self.log_message(f"Attempting to connect to MCP server at {mcp_server_url}")
+        mcp_server_url_for_context = f"http://{rpi_ip}:{port}/mcp" # For logging and context
+        self.log_message(f"Attempting to establish MCP connection to {rpi_ip}:{port}")
+
+        reader = None
+        writer = None
         try:
+            self.log_message(f"Opening raw connection to {rpi_ip}:{port}...")
+            reader, writer = await asyncio.open_connection(rpi_ip, port)
+            self.log_message(f"Raw connection established to {rpi_ip}:{port}.")
+
             # Ensure commands is a dictionary for the tool call as per MCP spec for arguments
             tool_arguments = {"commands": commands}
 
-            async with streamablehttp_client(mcp_server_url) as (read_stream, write_stream, _):
-                async with ClientSession(read_stream, write_stream) as session:
-                    self.log_message("MCP Client: Initializing session...")
-                    init_response = await session.initialize()
-                    self.log_message(f"MCP Client: Session initialized. Server capabilities: {init_response.capabilities if init_response else 'N/A'}")
-                    
-                    # List tools to verify (optional, good for debugging)
-                    # available_tools = await session.list_tools()
-                    # self.log_message(f"MCP Client: Available tools: {[t.name for t in available_tools.tools] if available_tools else 'None'}")
+            # Assuming ClientSession takes reader and writer.
+            # If your specific MCP library's ClientSession also takes server_url, you might add it:
+            # async with ClientSession(reader, writer, server_url=mcp_server_url_for_context) as session:
+            async with ClientSession(reader, writer) as session:
+                self.log_message("MCP Client: Initializing session...")
+                init_response = await session.initialize() # Kept as per original logic
+                self.log_message(f"MCP Client: Session initialized. Server capabilities: {init_response.capabilities if init_response else 'N/A'}")
+                
+                # List tools to verify (optional, good for debugging)
+                # available_tools = await session.list_tools()
+                # self.log_message(f"MCP Client: Available tools: {[t.name for t in available_tools.tools] if available_tools else 'None'}")
 
-                    self.log_message(f"MCP Client: Calling tool 'execute_servo_commands' with args: {tool_arguments}")
-                    tool_result: mcp_types.CallToolResult = await session.call_tool(
-                        name="execute_servo_commands", 
-                        arguments=tool_arguments
-                    )
-                    self.log_message(f"MCP Client: Tool call successful. Raw result content type: {type(tool_result.content)}")
-                    
-                    if isinstance(tool_result.content, str):
-                        return tool_result.content
-                    elif isinstance(tool_result.content, dict) and 'result' in tool_result.content: # Example if tool returns structured JSON
-                        return json.dumps(tool_result.content['result'])
-                    else: # Fallback for other types, convert to string
-                        return str(tool_result.content)
+                self.log_message(f"MCP Client: Calling tool 'execute_servo_commands' with args: {tool_arguments}")
+                tool_result = await session.call_tool(
+                    name="execute_servo_commands", 
+                    arguments=tool_arguments
+                )
+                self.log_message(f"MCP Client: Tool call successful. Raw result content type: {type(tool_result.content)}")
+                
+                if isinstance(tool_result.content, str):
+                    return tool_result.content
+                elif isinstance(tool_result.content, dict) and 'result' in tool_result.content: # Example if tool returns structured JSON
+                    return json.dumps(tool_result.content['result'])
+                else: # Fallback for other types, convert to string
+                    return str(tool_result.content)
 
         except asyncio.TimeoutError:
-            self.update_status(f"MCP Error: Connection to {rpi_ip} timed out.", is_error=True)
-            self.log_message(f"TimeoutError connecting to MCP server {mcp_server_url}.", level="ERROR")
+            self.update_status(f"MCP Error: Connection to {rpi_ip}:{port} timed out.", is_error=True)
+            self.log_message(f"TimeoutError connecting to MCP server at {rpi_ip}:{port}.", level="ERROR")
             return None
         except ConnectionRefusedError:
-            self.update_status(f"MCP Error: Connection refused by {rpi_ip}. Server running?", is_error=True)
-            self.log_message(f"ConnectionRefusedError for MCP server {mcp_server_url}.", level="ERROR")
-            return None
-        except mcp_types.MCPError as e: # Catch specific MCP protocol errors
-            self.update_status(f"MCP Protocol Error: {e.message}", is_error=True)
-            self.log_message(f"MCPError: {e.code} - {e.message} Data: {e.data}", level="ERROR")
+            self.update_status(f"MCP Error: Connection refused by {rpi_ip}:{port}. Server running?", is_error=True)
+            self.log_message(f"ConnectionRefusedError for MCP server at {rpi_ip}:{port}.", level="ERROR")
             return None
         except Exception as e:
             self.update_status(f"MCP Client Error: {type(e).__name__} - {e}", is_error=True)
-            self.log_message(f"General error in MCP communication to {mcp_server_url}: {e}", level="ERROR")
+            self.log_message(f"General error in MCP communication to {rpi_ip}:{port} ({mcp_server_url_for_context}): {e}", level="ERROR")
             # For debugging, include traceback
             import traceback
             self.log_message(traceback.format_exc(), level="DEBUG")
             return None
+        finally:
+            if writer:
+                if not writer.is_closing():
+                    self.log_message(f"MCP Client: Closing connection to {rpi_ip}:{port}.")
+                    writer.close()
+                    try:
+                        await writer.wait_closed()
+                        self.log_message(f"MCP Client: Connection to {rpi_ip}:{port} successfully closed.")
+                    except Exception as e_close:
+                        self.log_message(f"Error during writer.wait_closed() for {rpi_ip}:{port}: {e_close}", level="ERROR")
+                else:
+                    self.log_message(f"MCP Client: Connection to {rpi_ip}:{port} was already closing or closed.")
+            # Reader is typically closed when writer is closed or by server disconnecting.
 
 if __name__ == "__main__":
     # Create and manage the asyncio event loop

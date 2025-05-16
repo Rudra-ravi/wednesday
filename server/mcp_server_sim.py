@@ -79,6 +79,5 @@ if __name__ == "__main__":
     server_port = 8011
     print(f"Starting SIMULATED Raspberry Pi Servo Control MCP Server on {server_host}:{server_port}...")
     
-    # According to newer MCP SDK, we should use transport parameter without host/port
-    # We'll use a simpler call that works with the current version
+    # Fix: Use the correct transport value for FastMCP.run()
     mcp_app.run(transport="stdio") 
