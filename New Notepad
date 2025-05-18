@@ -1,0 +1,24 @@
+import time
+import RPi.GPIO as GPIO
+
+def set_angle(pwm, angle):
+    duty = 2 + (angle / 18)
+    pwm.ChangeDutyCycle(duty)
+    time.sleep(1.0)  # Changed from 0.5 to 1.0 for slower movement
+    pwm.ChangeDutyCycle(0)  # Stop sending signals to prevent jitter
+
+try:
+    # The original content of the try block was here.
+    # Adding 'pass' to fix the IndentationError.
+    # You'll need to restore the original servo control logic.
+    pass
+finally:
+    # Stop PWM and clean up GPIO
+    print("Returning servos to initial position...")
+    set_angle(pwm1, 0)
+    set_angle(pwm2, 0)
+    time.sleep(1.0) # Ensure servos have time to move before stopping PWM
+
+    pwm1.stop()
+    pwm2.stop()
+    GPIO.cleanup() 

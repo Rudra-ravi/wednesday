@@ -6,9 +6,12 @@ import json
 import time
 from dotenv import load_dotenv
 import os
+import anyio # Added import
+import socket # Added import
 
 # For MCP Client
 from mcp import ClientSession, types as mcp_types
+from mcp.client.streamable_http import streamablehttp_client # Added import
 
 # For Gemini
 import google.generativeai as genai
@@ -84,12 +87,12 @@ class WednesdayApp:
         config_frame.columnconfigure(1, weight=1)
 
         ttk.Label(config_frame, text="Raspberry Pi IP:", style="TLabel").grid(row=0, column=0, padx=(0,5), pady=5, sticky="w")
-        self.rpi_ip_var = tk.StringVar(value="192.168.1.100") # Default IP
+        self.rpi_ip_var = tk.StringVar(value="192.168.197.168") # Default IP for local server
         self.rpi_ip_entry = ttk.Entry(config_frame, textvariable=self.rpi_ip_var, width=30, font=("Segoe UI", 10))
         self.rpi_ip_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
         ttk.Label(config_frame, text="Port:", style="TLabel").grid(row=0, column=2, padx=(10,5), pady=5, sticky="w")
-        self.rpi_port_var = tk.StringVar(value="8011")
+        self.rpi_port_var = tk.StringVar(value="8011") # Default port to match server
         self.rpi_port_entry = ttk.Entry(config_frame, textvariable=self.rpi_port_var, width=8, font=("Segoe UI", 10))
         self.rpi_port_entry.grid(row=0, column=3, padx=5, pady=5, sticky="w")
 
@@ -229,25 +232,32 @@ class WednesdayApp:
     def _get_gemini_prompt(self, user_text_input: str) -> str:
         return f"""
 You are a precise robot arm controller. Your task is to convert the user's textual command into a sequence of servo motor movements.
-There are 6 servo motors, identified by their BCM GPIO pin numbers: 17, 27, 22, 23, 24, 25.
-Each servo can move to an angle between 0 and 180 degrees.
+You are controlling a robot arm with 6 servo motors. These servos are identified by names and are connected to the following Raspberry Pi GPIO pins:
+- servo_0: pin 17
+- servo_1: pin 27
+- servo_2: pin 22
+- servo_3: pin 23
+- servo_4: pin 24
+- servo_5: pin 25
+    
+Servos 0-2 can move between 0 and 45 degrees. Servos 3-5 can move between 0 and 180 degrees.
 
 Output your response as a JSON list of objects. Each object in the list represents a single servo command and must have the following fields:
 - "pin": An integer representing the BCM GPIO pin number for the servo.
 - "angle": An integer representing the target angle for the servo (0-180).
 - "duration_ms": An optional integer for how long the movement/hold should take in milliseconds (e.g., 500). If not critical, you can omit it or use a default like 500.
 
-For example, if the user says "Move servo on pin 17 to 90 degrees and servo on pin 22 to 30 degrees, each for 1 second", you should output:
+For example, if the user says "Move servo_0 to 90 degrees and servo_2 to 30 degrees, each for 1 second", you should output:
 [
-    {{"pin": 17, "angle": 90, "duration_ms": 1000}},
+    {{"pin": 17, "angle": 45, "duration_ms": 500}},
     {{"pin": 22, "angle": 30, "duration_ms": 1000}}
 ]
 
-If the user says "Wave the arm connected to pin 17", a possible output could be:
+If the user says "Wave the arm connected to servo_0", a possible output could be:
 [
-    {{"pin": 17, "angle": 45, "duration_ms": 500}},
-    {{"pin": 17, "angle": 135, "duration_ms": 700}},
-    {{"pin": 17, "angle": 90, "duration_ms": 500}}
+    {{"pin": 23, "angle": 45, "duration_ms": 500}},
+    {{"pin": 23, "angle": 10, "duration_ms": 700}},
+    {{"pin": 23, "angle": 45, "duration_ms": 500}}
 ]
 
 Ensure the output is ONLY the JSON list, with no other text, markdown formatting, or explanations.
@@ -302,70 +312,102 @@ JSON output:
         mcp_server_url_for_context = f"http://{rpi_ip}:{port}/mcp" # For logging and context
         self.log_message(f"Attempting to establish MCP connection to {rpi_ip}:{port}")
 
-        reader = None
-        writer = None
         try:
-            self.log_message(f"Opening raw connection to {rpi_ip}:{port}...")
-            reader, writer = await asyncio.open_connection(rpi_ip, port)
-            self.log_message(f"Raw connection established to {rpi_ip}:{port}.")
+            mcp_http_url = f"http://{rpi_ip}:{port}/mcp"
+            self.log_message(f"Opening MCP HTTP connection to {mcp_http_url}...")
+            
+            async with streamablehttp_client(mcp_http_url) as (read_stream, write_stream, _response_future):
+                self.log_message(f"MCP HTTP transport established to {mcp_http_url}.")
 
-            # Ensure commands is a dictionary for the tool call as per MCP spec for arguments
-            tool_arguments = {"commands": commands}
+                # Ensure commands is a dictionary for the tool call as per MCP spec for arguments
+                tool_arguments = {"commands": commands}
 
-            # Assuming ClientSession takes reader and writer.
-            # If your specific MCP library's ClientSession also takes server_url, you might add it:
-            # async with ClientSession(reader, writer, server_url=mcp_server_url_for_context) as session:
-            async with ClientSession(reader, writer) as session:
-                self.log_message("MCP Client: Initializing session...")
-                init_response = await session.initialize() # Kept as per original logic
-                self.log_message(f"MCP Client: Session initialized. Server capabilities: {init_response.capabilities if init_response else 'N/A'}")
-                
-                # List tools to verify (optional, good for debugging)
-                # available_tools = await session.list_tools()
-                # self.log_message(f"MCP Client: Available tools: {[t.name for t in available_tools.tools] if available_tools else 'None'}")
+                async with ClientSession(read_stream, write_stream) as session:
+                    self.log_message("MCP Client: Initializing session...")
+                    init_response = await session.initialize()
+                    self.log_message(f"MCP Client: Session initialized. Server capabilities: {init_response.capabilities if init_response else 'N/A'}")
 
-                self.log_message(f"MCP Client: Calling tool 'execute_servo_commands' with args: {tool_arguments}")
-                tool_result = await session.call_tool(
-                    name="execute_servo_commands", 
-                    arguments=tool_arguments
-                )
-                self.log_message(f"MCP Client: Tool call successful. Raw result content type: {type(tool_result.content)}")
-                
-                if isinstance(tool_result.content, str):
-                    return tool_result.content
-                elif isinstance(tool_result.content, dict) and 'result' in tool_result.content: # Example if tool returns structured JSON
-                    return json.dumps(tool_result.content['result'])
-                else: # Fallback for other types, convert to string
-                    return str(tool_result.content)
+                    self.log_message(f"MCP Client: Calling tool 'execute_servo_commands' with args: {tool_arguments}")
+                    tool_result = await session.call_tool(
+                        name="execute_servo_commands",
+                        arguments=tool_arguments
+                    )
+                    self.log_message(f"MCP Client: Tool call successful. Raw result content type: {type(tool_result.content)}")
+                    self.log_message(f"MCP Client: Tool call result content (full): {str(tool_result.content)}") # Log the full content for inspection
 
-        except asyncio.TimeoutError:
-            self.update_status(f"MCP Error: Connection to {rpi_ip}:{port} timed out.", is_error=True)
-            self.log_message(f"TimeoutError connecting to MCP server at {rpi_ip}:{port}.", level="ERROR")
+                    content = tool_result.content
+                    if isinstance(content, list) and len(content) > 0:
+                        first_item = content[0]
+                        # Check if the first item is an MCP content type (like TextContent)
+                        # and has a 'text' attribute which holds the actual string data.
+                        if hasattr(first_item, 'text') and isinstance(first_item.text, str):
+                            self.log_message(f"Extracted text from MCP content object: {first_item.text}")
+                            return first_item.text
+                        else:
+                            # If the list contains something else, or .text is not a string
+                            self.log_message(f"Tool result is a list, but first item is not a recognized MCP text content object or .text is not a string: {str(first_item)}", level="WARNING")
+                            # Fallback to stringifying the whole list, though this might not be the desired JSON.
+                            return str(content)
+                    elif isinstance(content, str):
+                        # If the content is already a string, return it directly.
+                        return content
+                    elif isinstance(content, dict):
+                        # If server directly returns a dict (e.g. FastMCP might auto-serialize some Pydantic models to dicts)
+                        # and the calling code expects a JSON string of that dict.
+                        self.log_message(f"Tool result is a dict, returning its JSON string representation: {str(content)}", level="INFO")
+                        return json.dumps(content) # Convert dict to JSON string
+                    else:
+                        # Fallback for any other unexpected types.
+                        self.log_message(f"Unexpected tool result content structure. Type: {type(content)}, Value: {str(content)}", level="WARNING")
+                        return str(content)
+
+        except socket.gaierror: # Specific error for DNS/address lookup issues
+            self.update_status(f"MCP Error: Could not resolve hostname {rpi_ip}. Check IP address.", is_error=True)
+            self.log_message(f"DNS or address lookup error for MCP server at {rpi_ip}:{port}.", level="ERROR")
             return None
-        except ConnectionRefusedError:
-            self.update_status(f"MCP Error: Connection refused by {rpi_ip}:{port}. Server running?", is_error=True)
-            self.log_message(f"ConnectionRefusedError for MCP server at {rpi_ip}:{port}.", level="ERROR")
+        except anyio.BrokenResourceError as e: 
+             self.update_status(f"MCP Error: Connection to {rpi_ip}:{port} broken.", is_error=True)
+             self.log_message(f"AnyIO BrokenResourceError for MCP server at {rpi_ip}:{port}: {e}", level="ERROR")
+             import traceback
+             self.log_message(traceback.format_exc(), level="DEBUG")
+             return None
+        except OSError as e: # Catch generic OS errors like ConnectionRefusedError
+            # Check if it's a ConnectionRefusedError (covers different OSes)
+            if isinstance(e, ConnectionRefusedError) or \
+               (hasattr(e, 'errno') and e.errno in [111, 61]) or \
+               ('Connection refused' in str(e)): # 111 for Linux, 61 for macOS/Windows
+                 self.update_status(f"MCP Error: Connection refused by {rpi_ip}:{port}. Server running?", is_error=True)
+                 self.log_message(f"ConnectionRefusedError for MCP server at {rpi_ip}:{port}. Is the server running and accessible?", level="ERROR")
+            else:
+                 self.update_status(f"MCP Network Error: {type(e).__name__} - {e}", is_error=True)
+                 self.log_message(f"Network/OS error in MCP communication to {rpi_ip}:{port}: {e}", level="ERROR")
+                 import traceback
+                 self.log_message(traceback.format_exc(), level="DEBUG")
             return None
-        except Exception as e:
-            self.update_status(f"MCP Client Error: {type(e).__name__} - {e}", is_error=True)
-            self.log_message(f"General error in MCP communication to {rpi_ip}:{port} ({mcp_server_url_for_context}): {e}", level="ERROR")
-            # For debugging, include traceback
+        except asyncio.TimeoutError: 
+            self.update_status(f"MCP Error: Operation to {rpi_ip}:{port} timed out.", is_error=True)
+            self.log_message(f"TimeoutError during MCP operation with {rpi_ip}:{port}.", level="ERROR")
+            return None
+        except Exception as e: # General MCP or other errors
+            # Check if the error message indicates an HTTP error status (e.g. 404, 500)
+            # This is a basic check; mcp library might have more specific HTTP error types
+            str_e = str(e).lower()
+            if "status_code=404" in str_e or "404 not found" in str_e:
+                 self.update_status(f"MCP HTTP Error: Server not found at {mcp_http_url} (404). Check URL and server path.", is_error=True)
+                 self.log_message(f"HTTP 404 Not Found for MCP server at {mcp_http_url}. Ensure server is running and path is correct.", level="ERROR")
+            elif "status_code=5" in str_e: # Catches 5xx errors
+                 self.update_status(f"MCP HTTP Error: Server error at {mcp_http_url} ({e}). Check server logs.", is_error=True)
+                 self.log_message(f"HTTP Server Error ({e}) for MCP server at {mcp_http_url}.", level="ERROR")
+            else:
+                self.update_status(f"MCP Client Error: {type(e).__name__} - {e}", is_error=True)
+                self.log_message(f"General error in MCP communication to {mcp_http_url}: {e}", level="ERROR")
+            
             import traceback
             self.log_message(traceback.format_exc(), level="DEBUG")
             return None
-        finally:
-            if writer:
-                if not writer.is_closing():
-                    self.log_message(f"MCP Client: Closing connection to {rpi_ip}:{port}.")
-                    writer.close()
-                    try:
-                        await writer.wait_closed()
-                        self.log_message(f"MCP Client: Connection to {rpi_ip}:{port} successfully closed.")
-                    except Exception as e_close:
-                        self.log_message(f"Error during writer.wait_closed() for {rpi_ip}:{port}: {e_close}", level="ERROR")
-                else:
-                    self.log_message(f"MCP Client: Connection to {rpi_ip}:{port} was already closing or closed.")
-            # Reader is typically closed when writer is closed or by server disconnecting.
+        # The 'finally' block for closing client_stream is removed as 
+        # streamablehttp_client and ClientSession are async context managers and handle their own cleanup.
+        # No explicit close needed for streams obtained from streamablehttp_client within its context.
 
 if __name__ == "__main__":
     # Create and manage the asyncio event loop
