@@ -1,0 +1,5 @@
+google-generativeai
+mcp[cli]
+python-dotenv
+websockets
+anyio

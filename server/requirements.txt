@@ -1,0 +1,4 @@
+mcp[cli]
+RPi.GPIO
+pigpio
+fastmcp
