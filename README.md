@@ -21,17 +21,24 @@ The system consists of two main components:
     *   Currently configured for specific GPIO pins (17, 27, 22, 23, 24, 25) with some pins having angle caps.
 
 
-## Working
-![image](https://github.com/user-attachments/assets/81b0b9e8-7ffd-45a9-a0ed-b2cd4de480a4)
+## 🚀 Working
 
-![mm](https://github.com/user-attachments/assets/6d5ca818-dda1-4e8b-9120-64d6825ca72a)
-![image22](https://github.com/user-attachments/assets/11ca076c-a456-4f72-97af-7fbbc5abbbed)
-![image24](https://github.com/user-attachments/assets/dcb6a9c0-7cc7-44ed-9b91-29f5a90eafde)
+### Demonstration Video
+[![Working Demo](https://github.com/user-attachments/assets/52ea6d9a-40a0-485d-badb-8fbba3c78d12)](https://github.com/user-attachments/assets/52ea6d9a-40a0-485d-badb-8fbba3c78d12)
+
+### System in Operation
+![System Connected and Running](https://github.com/user-attachments/assets/81b0b9e8-7ffd-45a9-a0ed-b2cd4de480a4)
+
+### System Architecture
+![Block Diagram](https://github.com/user-attachments/assets/6d5ca818-dda1-4e8b-9120-64d6825ca72a)
+
+### Hardware Implementation
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/11ca076c-a456-4f72-97af-7fbbc5abbbed" alt="3D Printed Components" width="45%" />
+  <img src="https://github.com/user-attachments/assets/dcb6a9c0-7cc7-44ed-9b91-29f5a90eafde" alt="Hardware Assembly" width="45%" />
+</div>
 
 
-
-
-https://github.com/user-attachments/assets/e7dc4ff7-332e-4b55-92a0-925a3c7be701
 
 
 
