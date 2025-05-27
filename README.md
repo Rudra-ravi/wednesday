@@ -90,13 +90,13 @@ This project enables controlling a servo-driven robotic arm (or similar device) 
 
 #### Client Computer
 - **Operating System**: Windows 10+, macOS 10.14+, or Linux (Ubuntu 18.04+)
-- **Python**: Version 3.8 or higher
+- **Python**: Version 3.11 or higher
 - **Internet**: Required for Gemini AI API access
 - **Network**: Local network access to Raspberry Pi
 
 #### Raspberry Pi
 - **OS**: Raspberry Pi OS (Bullseye or newer)
-- **Python**: Version 3.8+ (typically pre-installed)
+- **Python**: Version 3.11 (typically pre-installed)
 - **pigpio**: Daemon for precise GPIO control
 - **Network**: WiFi or Ethernet connection
 
@@ -258,7 +258,7 @@ Raspberry Pi                    Servo Motors
 ### Client Setup (Your Computer)
 
 1. **Prerequisites**:
-   - Python 3.8+ installed
+   - Python 3.11 installed
    - pip package manager
    - Internet connection
 
