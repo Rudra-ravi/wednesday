@@ -1,6 +1,6 @@
 # Wednesday: AI-Powered Robotic Arm Controller
 
-This project enables controlling a servo-driven robotic arm (or similar device) connected to a Raspberry Pi using natural language commands processed by Google's Gemini AI.
+This project enables controlling a servo-driven robotic arm (or similar device) connected to a Raspberry Pi using natural language commands processed by Google's Gemini AI. It leverages the **Model Context Protocol (MCP)** for standardized communication between the client application and the server running on the Raspberry Pi.
 
 ## Project Overview
 
@@ -10,15 +10,25 @@ The system consists of two main components:
     *   A Tkinter-based GUI application.
     *   Takes user input in natural language (e.g., "Wave the arm").
     *   Uses the Google Gemini API to translate these commands into a structured JSON list of servo motor actions (pin, angle, duration).
-    *   Communicates with the Raspberry Pi server via HTTP (using the MCP library) to send the servo commands.
+    *   Communicates with the Raspberry Pi server via HTTP using the **Model Context Protocol (MCP)** client libraries. Specifically, it uses MCP to discover and call the `execute_servo_commands` tool exposed by the server.
     *   Requires a `GEMINI_API_KEY` in a `.env` file within the `client` directory.
 
 2.  **Server (`server/`)**:
     *   A Python application designed to run on a Raspberry Pi.
     *   Requires `pigpiod` service to be running.
-    *   Exposes an MCP tool (`execute_servo_commands`) over HTTP.
-    *   Receives JSON commands from the client and controls servo motors connected to the Raspberry Pi's GPIO pins using the `pigpio` library.
+    *   Exposes an MCP tool named `execute_servo_commands` over HTTP. This tool accepts servo commands and uses the `pigpio` library to control servo motors connected to the Raspberry Pi's GPIO pins.
+    *   The use of MCP allows the server to define its capabilities (i.e., the servo control tool) in a standardized way that any MCP-compliant client can interact with.
     *   Currently configured for specific GPIO pins (17, 27, 22, 23, 24, 25) with some pins having angle caps.
+
+## What is MCP (Model Context Protocol)?
+
+MCP is an open protocol designed to standardize how AI models and applications (like our client) interact with external tools and services (like our Raspberry Pi server). Key benefits in this project include:
+
+*   **Standardized Tool Usage**: The server exposes its servo control functionality as an MCP "tool". The client can discover and call this tool using a standard MCP mechanism, rather than custom API calls.
+*   **Decoupling**: The client doesn't need to know the fine-grained details of how the server implements servo control. It only needs to understand the MCP tool's interface (name, arguments, expected output).
+*   **Interoperability (Potential)**: While this project uses a custom client and server, MCP aims to allow different AI agents and tools to work together more easily.
+
+In this project, the `mcp` Python library (specifically `mcp[cli]`) is used on both the client and server to implement this protocol.
 
 ## Setup
 
@@ -64,19 +74,10 @@ The system consists of two main components:
 1.  User types a command like "Lift arm 1 to 30 degrees" into the client GUI.
 2.  The client sends this text to the Google Gemini AI, along with a prompt instructing it to convert the command into JSON-formatted servo instructions.
 3.  Gemini responds with a JSON list, e.g., `[{"pin": 17, "angle": 30, "duration_ms": 500}]`.
-4.  The client application sends this JSON payload to the `/mcp` endpoint on the Raspberry Pi server.
-5.  The server parses the JSON and uses the `execute_servo_commands` tool to move the specified servo(s) via `pigpio`.
-6.  The server sends back a response, which is displayed in the client's log.
+4.  The client application, using its MCP client capabilities, sends this JSON payload as arguments to the `execute_servo_commands` tool on the Raspberry Pi server. This is done via an HTTP request structured according to MCP specifications.
+5.  The MCP server on the Raspberry Pi receives the tool call, parses the JSON, and its `execute_servo_commands` function uses `pigpio` to move the specified servo(s).
+6.  The server sends back a response (e.g., status of each servo command), again structured as an MCP tool result, which is displayed in the client's log.
 
 ## Project Structure
 
 ```
-wednesday/
-├── client/
-│   ├── wednesday_app.py    # Main client GUI application
-│   ├── requirements.txt    # Client dependencies
-│   └── dot_env_example     # Example for .env file
-└── server/
-    ├── server.py           # Raspberry Pi server application
-    └── requirements.txt    # Server dependencies
-``` 
