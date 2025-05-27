@@ -20,6 +20,23 @@ The system consists of two main components:
     *   The use of MCP allows the server to define its capabilities (i.e., the servo control tool) in a standardized way that any MCP-compliant client can interact with.
     *   Currently configured for specific GPIO pins (17, 27, 22, 23, 24, 25) with some pins having angle caps.
 
+
+## Working
+![image](https://github.com/user-attachments/assets/81b0b9e8-7ffd-45a9-a0ed-b2cd4de480a4)
+
+![mm](https://github.com/user-attachments/assets/6d5ca818-dda1-4e8b-9120-64d6825ca72a)
+![image22](https://github.com/user-attachments/assets/11ca076c-a456-4f72-97af-7fbbc5abbbed)
+![image24](https://github.com/user-attachments/assets/dcb6a9c0-7cc7-44ed-9b91-29f5a90eafde)
+
+
+
+
+https://github.com/user-attachments/assets/e7dc4ff7-332e-4b55-92a0-925a3c7be701
+
+
+
+
+
 ## What is MCP (Model Context Protocol)?
 
 MCP is an open protocol designed to standardize how AI models and applications (like our client) interact with external tools and services (like our Raspberry Pi server). Key benefits in this project include:
@@ -79,5 +96,15 @@ In this project, the `mcp` Python library (specifically `mcp[cli]`) is used on b
 6.  The server sends back a response (e.g., status of each servo command), again structured as an MCP tool result, which is displayed in the client's log.
 
 ## Project Structure
+
+```
+├── client
+│   ├── dot_env_example
+│   ├── requirements.txt
+│   └── wednesday_app.py
+├── README.md
+├── server
+│   ├── requirements.txt
+│   └── server.py
 
 ```
