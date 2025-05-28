@@ -698,13 +698,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Tkinter**: For cross-platform GUI framework
 - **Open Source Community**: For tools and libraries that made this project possible
 
-## 📞 Support
-
-- **Issues**: Report bugs via [GitHub Issues](https://github.com/yourusername/wednesday/issues)
-- **Discussions**: Join conversations in [GitHub Discussions](https://github.com/yourusername/wednesday/discussions)
-- **Documentation**: Check [Wiki](https://github.com/yourusername/wednesday/wiki) for additional guides
-- **Email**: Contact maintainers at [your-email@domain.com]
-
 ---
 
 **Happy Robotics! 🤖**
